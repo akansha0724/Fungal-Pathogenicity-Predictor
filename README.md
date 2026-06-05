@@ -1,6 +1,15 @@
-# Fungal Pathogenicity Prediction
+# 🍄 Fungal Pathogenicity Predictor
+
+<p>
+  <img src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikit-learn&logoColor=white"/>
+  <img src="https://img.shields.io/badge/SHAP-FF6B6B?style=flat-square&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Accuracy-92.2%25-2ecc71?style=flat-square"/>
+</p>
 
 End-to-end ML pipeline for classifying fungal plant pathogenicity from ecological and morphological trait data, using the [FungalTraits v1.2](https://link.springer.com/article/10.1007/s13225-020-00466-2) dataset.
+
+---
 
 ## Results
 
@@ -10,14 +19,31 @@ End-to-end ML pipeline for classifying fungal plant pathogenicity from ecologica
 | Random Forest | 89.2% | 0.655 | 0.893 |
 | SVM (RBF) | 72.5% | 0.561 | 0.784 |
 
-*5-fold stratified cross-validation on training set (80/20 split).*  
-*Macro F1 is the primary metric — accuracy alone is misleading given the 78% class imbalance.*
+*5-fold stratified cross-validation · Macro F1 is primary metric given 78% class imbalance*
 
-**Test set (held-out 20%):**
+**Test set (held-out 20%): 91.2% Accuracy · 0.736 Macro F1**
 
-| Accuracy | Macro F1 | Weighted F1 |
-|---|---|---|
-| 91.2% | 0.736 | 0.913 |
+---
+
+## Visualisations
+
+### Model Benchmark
+![Model Comparison](results/02_model_comparison.png)
+
+### Confusion Matrix — Gradient Boosting
+![Confusion Matrix](results/03_confusion_matrix.png)
+
+### Top 20 Feature Importances — Random Forest
+![Feature Importance](results/04_feature_importance.png)
+
+### SHAP Analysis — Feature Impact
+![SHAP Importance](results/05_shap_importance.png)
+![SHAP Beeswarm](results/06_shap_beeswarm.png)
+
+### Per-Class F1 Score
+![Per Class F1](results/07_per_class_f1.png)
+
+---
 
 ## Dataset
 
@@ -26,50 +52,65 @@ End-to-end ML pipeline for classifying fungal plant pathogenicity from ecologica
 - **Target classes**: 9 classes after consolidating rare / multi-label entries
 - **Class imbalance**: `leaf/fruit/seed_pathogen` accounts for ~78% of labeled data
 
+### Class Distribution
+![Class Distribution](results/01_class_distribution.png)
+
+---
+
 ## Feature Engineering
 
-Two-stage hybrid pipeline built with `sklearn.ColumnTransformer` (no data leakage):
+Two-stage hybrid pipeline via `sklearn.ColumnTransformer` (no data leakage — fit only on training split):
 
-1. **Categorical features (19 columns)** — `OrdinalEncoder` with `NaN` treated as its own category (`encoded_missing_value=-2`). Missingness is biologically meaningful: a null `Decay_substrate` signals the fungus is not a decomposer.
+**Categorical (19 columns)** — `OrdinalEncoder` with `NaN` as its own category (`encoded_missing_value=-2`)
 
-2. **Free-text features (2 columns)** — `TfidfVectorizer` (max 100 features, `min_df=2`) on host-name and lifestyle-comment fields.
+> Missingness is biologically meaningful: a null `Decay_substrate` signals the fungus is not a decomposer. Imputing it would destroy that signal.
 
-Total feature dimensions: 88
+**Text (2 columns)** — `TfidfVectorizer` (max 100 features, `min_df=2`) on host names and lifestyle comments
+
+**Total feature dimensions: 88**
+
+---
 
 ## Key Design Decisions
 
 | Decision | Reason |
 |---|---|
-| NaN → own category (not imputed) | Missingness is biologically informative, not random |
-| Class consolidation (multi-label → `other_pathogen`) | Enables stratified CV; keeps class boundaries clean |
-| `class_weight='balanced'` on all models | Prevents the 78% majority class from dominating |
+| NaN → own category (not imputed) | Missingness encodes biological absence, not data error |
+| Class consolidation → `other_pathogen` | Multi-label combos (<10 samples) break stratified CV |
+| `class_weight='balanced'` on all models | Prevents 78% majority class dominating loss |
 | Macro F1 as primary metric | Weights all 9 classes equally; not skewed by majority |
-| Gradient Boosting as best model | Consistently higher CV accuracy (+3%) and Macro F1 (+3%) vs RF |
-| RF trained separately for SHAP | `TreeExplainer` gives fast, exact SHAP values; used for interpretability |
+| Gradient Boosting as best model | +3% CV accuracy and +3% Macro F1 vs Random Forest |
+| RF trained separately for SHAP | `TreeExplainer` gives fast, exact Shapley values |
 
-## Interpretability (SHAP)
+---
 
-SHAP TreeExplainer on Random Forest identifies the top predictors:
+## SHAP Interpretability
 
-- `primary_lifestyle` and `Secondary_lifestyle` — strongest single features; encode the fundamental ecological strategy
-- Taxonomic features (`Class`, `Order`, `Family`) — capture phylogenetic signal; related fungi share pathogenic strategies
-- `Decay_substrate_template` — sharply separates saprotrophs from pathogens
-- `Endophytic_interaction_capability_template` — distinguishes obligate pathogens from facultative ones
+Top predictors identified by SHAP:
+
+- **`primary_lifestyle` / `Secondary_lifestyle`** — strongest features; encode fundamental ecological strategy
+- **`Class`, `Order`, `Family`** — phylogenetic signal; related fungi share pathogenic strategies
+- **`Decay_substrate_template`** — sharply separates saprotrophs from pathogens
+- **`Endophytic_interaction_capability_template`** — distinguishes obligate from facultative pathogens
+
+---
 
 ## Project Structure
 
 ```
 .
-├── main.py                  # Orchestration — runs the full pipeline
+├── main.py                  # Full pipeline orchestration
 ├── src/
-│   ├── preprocess.py        # load_and_clean(), build_preprocessor(), NaN-safe TF-IDF
-│   ├── models.py            # RF / GradBoost / SVM definitions + 5-fold CV
+│   ├── preprocess.py        # DataProcessor: load, consolidate classes, ColumnTransformer
+│   ├── models.py            # RF / GradBoost / SVM + 5-fold CV benchmark
 │   ├── evaluate.py          # Metrics, classification report, SHAP computation
-│   └── visualize.py        # 7 publication-quality plots saved to results/
-├── results/                 # Generated artefacts (plots, model .pkl, CV CSV)
+│   └── visualize.py         # 7 publication-quality plots → results/
+├── results/                 # All plots + trained model + CV CSV
 ├── fungal_trait.csv         # Raw FungalTraits dataset
 └── requirements.txt
 ```
+
+---
 
 ## Setup
 
@@ -80,15 +121,17 @@ python main.py
 
 All 7 plots and the trained model are saved to `results/`.
 
+---
+
 ## Generated Outputs
 
 | File | Description |
 |---|---|
 | `01_class_distribution.png` | Sample counts per class |
-| `02_model_comparison.png` | CV benchmark — all 3 models, 3 metrics with error bars |
-| `03_confusion_matrix.png` | Row-normalised confusion matrix (Gradient Boosting) |
+| `02_model_comparison.png` | CV benchmark — 3 models × 3 metrics with error bars |
+| `03_confusion_matrix.png` | Row-normalised confusion matrix |
 | `04_feature_importance.png` | Top 20 RF feature importances |
-| `05_shap_importance.png` | Mean absolute SHAP values (aggregated across all classes) |
+| `05_shap_importance.png` | Mean absolute SHAP across all classes |
 | `06_shap_beeswarm.png` | SHAP beeswarm for dominant class |
 | `07_per_class_f1.png` | Per-class F1 breakdown |
 | `best_model.pkl` | Serialised Gradient Boosting pipeline |
